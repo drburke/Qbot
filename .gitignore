@@ -1,0 +1,8 @@
+*checkpoint*
+*.jpg
+*.mp4
+*log*
+*.gz
+*checkpoint.*
+*.pyc
+*1.png
