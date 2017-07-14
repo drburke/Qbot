@@ -79,9 +79,7 @@ class A3CNetwork:
         
         t_vars = tf.trainable_variables()
         self.policy_var = [var for var in t_vars if (var.name.startswith('policy') or var.name.startswith('encoder'))]
-        self.policy_var = tf.identity(self.policy_var,name='policy_var')
         self.value_var = [var for var in t_vars if var.name.startswith('value') or var.name.startswith('encoder')]
-        self.value_var = tf.identity(self.value_var,name='value_var')
 
         self.policy_loss = -tf.reduce_mean(tf.multiply(self.log_policy_softmax , (self.R_ - self.value_))) - \
        		(-10.*tf.reduce_mean(tf.multiply(self.policy_softmax,self.log_policy_softmax)))
@@ -92,7 +90,7 @@ class A3CNetwork:
         self.policy_opt = tf.train.AdamOptimizer(learning_rate,name='policy_opt').minimize(self.policy_loss)
         self.value_opt = tf.train.AdamOptimizer(learning_rate,name='value_opt').minimize(self.value_loss)
         
-    def save_to_file(self,filename):
+    # def save_to_file(self,filename):
 
 
     def reset_gradients(self):
@@ -147,7 +145,7 @@ def train_a3c_network(train_episodes=500,\
                    alpha=0.1,\
                    verbose=True,\
                    num_trains=50,\
-                   num_bots=8,\
+                   num_bots=16,\
                    action_size=4):
     
     
@@ -384,7 +382,7 @@ env = gym.make('LunarLander-v2')
 
 train, mainQN, saver, num_episodes, runningMean = test_and_train_qnetwork(memory_size=100000,\
                                      train_episodes=10000,\
-                                           gamma=0.98,\
+                                           gamma=0.99,\
                                            explore_start=1.,\
                                            explore_stop=0.1,\
                                            decay_rate=0.0001,\
