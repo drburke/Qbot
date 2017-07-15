@@ -91,11 +91,41 @@ class A3CNetwork:
         self.value_opt = tf.train.AdamOptimizer(learning_rate,name='value_opt').minimize(self.value_loss)
         
     def save_to_file(self,filename):
+
         saver = tf.train.Saver()
-        saver.save(self.sess, "checkpoints/"+filename+"ckpt")
+        saver.save(self.sess, "checkpoints/"+filename+".ckpt")
 
 
+    def load_from_file(self,filename):   
+
+        loaded_graph = tf.Graph()
+
+        self.sess = tf.InteractiveSession(graph=loaded_graph)
+        assert self.sess.graph is tf.get_default_graph()
+
+        loader = tf.train.import_meta_graph("checkpoints/"+filename+".meta")
+        loader.restore(self.sess, "checkpoints/"+filename)
+
+        self.policy_loss = self.sess.graph.get_tensor_by_name('policy_loss:0')
+        self.value_loss = self.sess.graph.get_tensor_by_name('value_loss:0')
+
+        self.policy_opt = self.sess.graph.get_tensor_by_name('policy_opt:0')
+        self.value_opt = self.sess.graph.get_tensor_by_name('value_opt:0')
+
+
+        # Dropout
+        self.keep_prob_ = self.sess.graph.get_tensor_by_name('keep_prob:0')
     
+        # State
+        self.state_ = self.sess.graph.get_tensor_by_name('state:0')
+        
+        # Actions, not one hot
+        self.actions_ = self.sess.graph.get_tensor_by_name('actions:0')
+
+        # R value
+        self.R_ = self.sess.graph.get_tensor_by_name('R:0')
+        
+        self.value_ = self.sess.graph.get_tensor_by_name('value_input:0')
 
     def reset_gradients(self):
         
