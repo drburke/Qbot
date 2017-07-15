@@ -90,8 +90,12 @@ class A3CNetwork:
         self.policy_opt = tf.train.AdamOptimizer(learning_rate,name='policy_opt').minimize(self.policy_loss)
         self.value_opt = tf.train.AdamOptimizer(learning_rate,name='value_opt').minimize(self.value_loss)
         
-    # def save_to_file(self,filename):
+    def save_to_file(self,filename):
+        saver = tf.train.Saver()
+        saver.save(self.sess, "checkpoints/"+filename+"ckpt")
 
+
+    
 
     def reset_gradients(self):
         
