@@ -20,10 +20,17 @@ os.environ["CUDA_VISIBLE_DEVICES"]="1"
 #  Based in part on https://github.com/jaara/AI-blog/blob/master/CartPole-A3C.py
 
 ENV = 'LunarLander-v2'
-ACTION_SIZE = 4
-STATE_SIZE = 8 
+
+RUN_TIME = 30
+NUM_THREADS = 8
+NUM_OPTIMIZERS = 2
+THREAD_DELAY = 0.001
+
 
 GAMMA = 0.99
+N_STEP_RETURN = 8
+GAMMA_N = GAMMA ** N_STEP_RETURN
+
 MIN_BATCH = 32
 LEARNING_RATE = 5e-3
 
@@ -193,6 +200,145 @@ def normalize_state(x, denormalize=False):
     # [-1,1] [-0.2,1.2] [-2,2] [0.5,-2]  [3.5,-3.5]  [6,-6] [1,0]  [1,0]
     y = x / [1.,1.,2.,1.5,3.5,6.,1.,1.]
     return y
+
+
+
+class Agent:
+    def __init__(self):
+        self.memory = []
+        self.R = 0.
+
+    def act(self, s):
+
+        s = np.array([s])
+        p = brain.predict_p(s)[0]
+
+        a = np.random.choice(ACTION_SIZE, p=p)
+
+        return a
+
+    def train(self, s, a, r, s_):
+        def get_sample(memory, n):
+            s, a, _, _ = memory[0]
+            _, _, _, s_ = memory[n-1]
+
+            return s, a, self.R, s_
+
+        
+        self.memory.append((s, a, r, s_))
+
+        self.R = (self.R + r * GAMMA_N) / GAMMA
+
+        if s_ is None:
+            while len(self.memory) > 0:
+                n = len(self.memory)
+                s, a, r, s_ = get_sample(self.memory, n)
+                brain.train_push(s, ar, r, s_)
+
+                self.R = (self.R - self.memory[0][2]) / GAMMA
+                self.memory.pop(0)
+
+            self.R = 0
+
+        if len(self.memory) >= N_STEP_RETURN:
+            s, a, r, s_ = get_sample(self.memory, N_STEP_RETURN)
+            brain.train_push(s, a, r, s_)
+
+            self.R = self.R - self.memory[0][2]
+            self.memory.pop(0)
+
+
+
+
+class Environment(threading.Thread):
+
+    stop_signal = False
+
+    def __init__(self, render=False):
+        threading.Thread.__init__(self)
+
+        self.render = render
+        self.env = gym.make(ENV)
+        self.agent = Agent()
+
+    def runEpisode(self):
+        s = self.env.reset()
+        R = 0
+        while True:
+            time.sleep(THREAD_DELAY)
+
+            if self.render: self.env.render()
+
+            a = self.agent.act(s)
+            s_, r, done, info = self.env.step(a)
+
+            if done:
+                s_ = None
+
+            self.agent.train(s, a, r, s_)
+
+            s = s_
+            R += r
+
+            if done or self.stop_signal:
+                break
+
+        print("Total R:", R)
+
+    def run(self):
+        while not self.stop_signal:
+            self.runEpisode()
+
+    def stop(self):
+        self.stop_signal = True
+
+class Optimizer(threading.Thread):
+    stop_signal = False
+
+    def __init__(self):
+        threading.Thread.__init__(self)
+
+    def run(self):
+        while not self.stop_signal:
+            brain.optimize()
+
+    def stop(self):
+        self.stop_signal = True
+
+
+env_test = Environment(render=True)
+STATE_SIZE = env_test.env.observation_space.shape[0]
+ACTION_SIZE = env_test.env.action_space.n
+NONE_STATE = np.zeros(STATE_SIZE)
+
+
+brain = A3CNetwork()
+
+envs = [Environment() for i in range(NUM_THREADS)]
+opts = [Optimizer() for i in range(NUM_OPTIMIZERS)]
+
+for o in opts:
+    o.start()
+
+for e in envs:
+    e.start()
+
+time.sleep(RUN_TIME)
+
+for e in envs:
+    e.stop()
+for e in envs:
+    e.join()
+
+for o in opts:
+    o.stop()
+for o in opts:
+    o.join()
+
+print("Done training")
+env_test.run()
+
+
 
 def train_a3c_network(train_episodes=500,\
                    gamma=0.99,\
