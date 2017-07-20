@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 from IPython.display import clear_output
 import random
 import math
+import time
 import threading
 
 random.seed()
@@ -16,6 +17,7 @@ import os
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"]="1"
 
+#  Based in part on https://github.com/jaara/AI-blog/blob/master/CartPole-A3C.py
 
 ENV = 'LunarLander-v2'
 ACTION_SIZE = 4
@@ -109,8 +111,62 @@ class A3CNetwork:
 
     def optimize(self):
 
+        if len(self.train_queue[0]) < MIN_BATCH:
+            time.sleep(0)
+            return
+
+        with self.lock_queue:
+            if len(self.train_queue[0]) < MIN_BATCH:
+                return
+
+            s, a, r, s_, s_mask = self.train_queue
+
+            self.train_queue = [ [], [], [], [], [] ]
 
 
+        s = np.vstack(s)
+        a = np.vstack(a)
+        r = np.vstack(r)
+        s_ = np.vstack(s_)
+        s_mask = np.vstack(s_mask)
+
+        if len(s) > 5*MIN_BATCH: print('Alert ! Minimizing large batch of size %d' % len(s))
+
+        v = self.predict_v(s_)
+
+        r  = r + GAMMA_N * v * s_mask
+
+        self.sess.run(self.optimizer, feed_dict={s_t: s, a_t: a, r_t: r})
+
+    def train_push(self, s, a, r, s_):
+        with self.lock_queue:
+
+            self.train_queue[0].append(s)
+            self.train_queue[1].append(a)
+            self.train_queue[2].append(r)
+
+            if s_ is None: 
+                self.train_queue[3].append(NONE_STATE)  # Next state
+                self.train_queue[4].append(0.) # Mask
+            else:
+                self.train_queue[3].append(s_)
+                self.train_queue[4].append(1.)
+
+    def predict(self, s):
+
+        policy, value = self.session.run([self.policy_softmax,self.value], feed_dict{self.state: s})
+
+        return policy, value
+
+    def predict_p(self, s):
+        policy = self.session.run(self.policy_softmax, feed_dict{self.state: s})
+
+        return policy
+
+    def predict_p(self, s):
+        value = self.session.run(self.value, feed_dict{self.state: s})
+
+        return value
 # create memory class for storing previous experiences
 class Memory():
     def __init__(self, max_size = 10000):
