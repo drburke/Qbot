@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 from IPython.display import clear_output
 import random
 import math
+import threading
 
 random.seed()
 # %matplotlib inline
@@ -15,6 +16,19 @@ import os
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"]="1"
 
+
+ENV = 'LunarLander-v2'
+ACTION_SIZE = 4
+STATE_SIZE = 8 
+
+GAMMA = 0.99
+MIN_BATCH = 32
+LEARNING_RATE = 5e-3
+
+LOSS_V = 0.5
+LOSS_ENTROPY = 0.01
+
+ALPHA = 0.1
 
 def leaky_relu(x,alpha=0.02):
     return tf.maximum(alpha*x,x)
@@ -26,14 +40,17 @@ def running_mean(x, N):
 
 # Create class QNetwork
 class A3CNetwork:
+
+    train_queue = [ [], [], [], [], [] ] # s, a r, s', s' mask
+    lock_queue = threading.Lock()
+
     def __init__(self, \
                  learning_rate=0.01, \
-                 state_size=8, 
-                 action_size=4, \
+                 state_size=STATE_SIZE, 
+                 action_size=ACTION_SIZE, \
                  hidden_size=10, \
                  hidden_layers=2, \
-                 alpha=0.1, \
-                 name='QNetwork'):
+                 alpha=ALPHA):
         
         # Dropout
         self.keep_prob_ = tf.placeholder(tf.float32,name='keep_prob')
@@ -60,93 +77,39 @@ class A3CNetwork:
             self.fcl = tf.layers.dense(self.state_, hidden_size,activation=None,kernel_initializer=tf.contrib.layers.xavier_initializer())
             self.fcl = leaky_relu(self.fcl)
 
-            self.fcl2 = tf.layers.dense(self.state_, hidden_size,activation=None,kernel_initializer=tf.contrib.layers.xavier_initializer())
-            self.fcl2 = leaky_relu(self.fcl2) 
     
         with tf.variable_scope("policy"):
 #             self.policy_weights = tf.Variable(tf.truncated_normal((hidden_size,action_size)),name="weights")
 #             self.policy_bias = tf.Variable(tf.zeros(action_size),name="bias")
 #             self.policy = tf.add(tf.matmul(self.fcl_relu,self.policy_weights),self.policy_bias)
             self.policy = tf.layers.dense(self.fcl, action_size,activation=None,kernel_initializer=tf.contrib.layers.xavier_initializer(),name='policy_out')
+        
         self.policy_softmax = tf.nn.softmax(self.policy,name='policy_softmax_out')
-        self.log_policy_softmax = tf.log(self.policy_softmax+0.001,name='policy_log_softmax_out')
+        self.log_policy_softmax = tf.log(tf.reduce_sum(self.policy_softmax*self.actions_) + 1e-10,name='policy_log_softmax_out')
         
         with tf.variable_scope("value"):
 #             self.value_weights = tf.Variable(tf.truncated_normal((hidden_size,1)),name="weights")
 #             self.value_bias = tf.Variable(tf.zeros(1),name="bias")
 #             self.value = tf.add(tf.matmul(self.fcl_relu,self.value_weights),self.value_bias)
-            self.value_layer = tf.layers.dense(self.fcl2, 1,activation=None,kernel_initializer=tf.contrib.layers.xavier_initializer())
+            self.value_layer = tf.layers.dense(self.fcl, 1,activation=None,kernel_initializer=tf.contrib.layers.xavier_initializer())
         
         self.value = tf.identity(self.value_layer,name='value')
-        
-        t_vars = tf.trainable_variables()
-        self.policy_var = [var for var in t_vars if (var.name.startswith('policy') or var.name.startswith('encoder'))]
-        self.value_var = [var for var in t_vars if var.name.startswith('value') or var.name.startswith('encoder')]
 
-        self.policy_loss = -tf.reduce_mean(tf.multiply(self.log_policy_softmax , (self.R_ - self.value_))) - \
-       		(-10.*tf.reduce_mean(tf.multiply(self.policy_softmax,self.log_policy_softmax)))
-        self.policy_loss = tf.identity(self.policy_loss,name='policy_loss')
+        self.policy_loss = -tf.reduce_mean(tf.multiply(self.log_policy_softmax , (self.R_ - self.value_)))
+
         self.value_loss = tf.reduce_mean(tf.square(self.R_ - self.value))
-        self.value_loss = tf.identity(self.value_loss,name='value_loss')
-
-        self.policy_opt = tf.train.AdamOptimizer(learning_rate,name='policy_opt').minimize(self.policy_loss)
-        self.value_opt = tf.train.AdamOptimizer(learning_rate,name='value_opt').minimize(self.value_loss)
         
-    def save_to_file(self,filename):
 
-        saver = tf.train.Saver()
-        saver.save(self.sess, "checkpoints/"+filename)
+        self.entropy = LOSS_ENTROPY * tf.reduce_sum(self.policy_softmax*tf.log(self.policy_softmax + 1e-10)))
 
-        for op in tf.get_default_graph().get_operations():
-            print(str(op.name))
+        self.total_loss = tf.reduce_mean(self.policy_loss + self.value_loss + self.entropy)
 
-    def load_from_file(self,filename):   
+       
+        self.optimizer = tf.train.RMSPropOptimizer(LEARNING_RATE, decay=0.99).minimize(self.total_loss)
 
-
-        self.sess = tf.InteractiveSession()
-        assert self.sess.graph is tf.get_default_graph()
-
-        loader = tf.train.import_meta_graph("checkpoints/"+filename+".meta")
-        loader.restore(self.sess, "checkpoints/"+filename)
-
-        self.policy_loss = self.sess.graph.get_operation_by_name('policy_loss')
-        self.value_loss = self.sess.graph.get_operation_by_name('value_loss')
-
-        self.policy_opt = self.sess.graph.get_operation_by_name('policy_opt')
-        self.value_opt = self.sess.graph.get_operation_by_name('value_opt')
+    def optimize(self):
 
 
-        # Dropout
-        self.keep_prob_ = self.sess.graph.get_tensor_by_name('keep_prob:0')
-    
-        # State
-        self.state_ = self.sess.graph.get_tensor_by_name('state:0')
-        
-        # Actions, not one hot
-        self.actions_ = self.sess.graph.get_tensor_by_name('actions:0')
-
-        # R value
-        self.R_ = self.sess.graph.get_tensor_by_name('R:0')
-        
-        self.value_ = self.sess.graph.get_tensor_by_name('value_input:0')
-
-
-        # Outputs
-        self.policy = self.sess.graph.get_tensor_by_name('policy/policy_out:0')
-        self.policy_softmax = self.sess.graph.get_tensor_by_name('policy/policy_softmax_out:0')
-        self.log_policy_softmax = self.sess.graph.get_tensor_by_name('policy/policy_log_softmax_out:0')
-
-
-    def reset_gradients(self):
-        
-        self.fcl_weights_grad = tf.zeros(self.fcl_weights.get_shape().as_list())
-        self.fcl_bias_grad = tf.zeros(self.fcl_bias.get_shape().as_list())
-        
-        self.policy_weights_grad = tf.zeros(self.policy_weights.get_shape().as_list())
-        self.policy_bias_grad = tf.zeros(self.policy_bias.get_shape().as_list())
-        
-        self.value_weights_grad = tf.zeros(self.value_weights.get_shape().as_list())
-        self.value_bias_grad = tf.zeros(self.value_bias.get_shape().as_list())
 
 # create memory class for storing previous experiences
 class Memory():
