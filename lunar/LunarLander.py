@@ -8,38 +8,49 @@ import random
 import math
 import time
 import threading
+import pickle
 
 random.seed()
 # %matplotlib inline
 
+with open('hyper_params.pickle','rb') as f:
+    hyper_params = pickle.load(f)
+
+
 import time
 import os
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
-os.environ["CUDA_VISIBLE_DEVICES"]="1"
+os.environ["CUDA_VISIBLE_DEVICES"]= hyper_params['gpu']
 
 #  Based in part on https://github.com/jaara/AI-blog/blob/master/CartPole-A3C.py
 
+
+
+
+
 ENV = 'LunarLander-v2'
-LOG_PATH = './logs/2/logs_run'
+LOG_PATH = hyper_params['log_path']
+print(LOG_PATH)
+
 #ENV = 'CartPole-v1'
-RUN_TIME = 600
-NUM_THREADS = 8
-NUM_OPTIMIZERS = 2
+RUN_TIME = 300
+NUM_THREADS = hyper_params['num_workers']
+NUM_OPTIMIZERS = hyper_params['num_optimizer']
 THREAD_DELAY = 0.001
 
 
 GAMMA = 0.99
-N_STEP_RETURN = 8
+N_STEP_RETURN = hyper_params['n_step_return']
 GAMMA_N = GAMMA ** N_STEP_RETURN
 
-MIN_BATCH = 128
-LEARNING_RATE = 5e-4
+MIN_BATCH = hyper_params['min_batch'] 
+LEARNING_RATE = hyper_params['learning_rate']#5e-4
 
-LOSS_V = 0.5
-LOSS_ENTROPY = 0.01
+LOSS_V = hyper_params['loss_v']
+LOSS_ENTROPY = hyper_params['loss_entropy']
 
-ALPHA = 0.05
-HIDDEN_SIZE = 64
+ALPHA = hyper_params['alpha']
+HIDDEN_SIZE = hyper_params['hidden_size']
 
 env = gym.make(ENV)
 STATE_SIZE = env.observation_space.shape[0]
@@ -309,6 +320,7 @@ class Environment(threading.Thread):
 
     def runEpisode(self):
         s = self.env.reset()
+        s = normalize_state(s)
         R = 0
         while True:
             time.sleep(THREAD_DELAY)
@@ -317,7 +329,7 @@ class Environment(threading.Thread):
 
             a = self.agent.act(s)
             s_, r, done, info = self.env.step(a)
-
+            s_ = normalize_state(s_)
             if done:
                 s_ = None
 
@@ -379,7 +391,7 @@ for o in opts:
     o.join()
 
 print("Done training")
-env_test.run()
+# env_test.run()
 
 
 
