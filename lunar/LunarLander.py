@@ -20,7 +20,7 @@ os.environ["CUDA_VISIBLE_DEVICES"]="1"
 #  Based in part on https://github.com/jaara/AI-blog/blob/master/CartPole-A3C.py
 
 ENV = 'LunarLander-v2'
-LOG_PATH = './logs/1/logs_run'
+LOG_PATH = './logs/2/logs_run'
 #ENV = 'CartPole-v1'
 RUN_TIME = 600
 NUM_THREADS = 8
@@ -66,17 +66,18 @@ class A3CNetwork:
 
     def __init__(self):
         
-        self.average_rewards_tf = tf.placeholder(tf.float32, None, name='average_rewards')
-        
+        self.average_rewards_tf = tf.placeholder(tf.float32, None, name='average_reward')
+        self.total_loss_tf = tf.placeholder(tf.float32, None, name='total_loss')
+
         self.reward_counter = 0
         self.reward_sum = 0.
         self.num_rewards = NUM_THREADS
         self.ep = 0
 
         # Add scalar summary trackers
-        tf.summary.scalar('average_reward', self.average_rewards_tf)
+        self.rewards_summary = tf.summary.scalar('average_reward', self.average_rewards_tf)
+        self.loss_summary = tf.summary.scalar('total_loss', self.total_loss_tf)
 
- 
         #  Create output variables  
         merged_tf = tf.summary.merge_all()
         
@@ -146,7 +147,7 @@ class A3CNetwork:
         self.merged_tf = tf.summary.merge_all()
         self.file_writer = tf.summary.FileWriter(LOG_PATH,self.default_graph)
 
-    def count_reward(self,r):
+    def log_reward(self,r):
         self.reward_counter += 1
         self.reward_sum += r
 
@@ -155,7 +156,7 @@ class A3CNetwork:
             self.reward_counter = 0
             self.reward_sum = 0.
             self.ep += 1
-            summary = self.sess.run(self.merged_tf, feed_dict={self.average_rewards_tf: average_reward})
+            summary = self.sess.run(self.rewards_summary, feed_dict={self.average_rewards_tf: average_reward})
             self.file_writer.add_summary(summary,self.ep)
 
     def optimize(self):
@@ -185,8 +186,10 @@ class A3CNetwork:
 
         r  = r + GAMMA_N * v * s_mask
 
-        self.sess.run(self.optimizer, feed_dict={self.state_: s, self.actions_: a, self.R_: r})
+        _, total_loss = self.sess.run([self.optimizer,self.total_loss], feed_dict={self.state_: s, self.actions_: a, self.R_: r})
 
+        summary = self.sess.run(self.loss_summary, feed_dict={self.total_loss_tf: total_loss})
+        self.file_writer.add_summary(summary,self.ep)
 
     def train_push(self, s, a, r, s_):
         with self.lock_queue:
@@ -327,7 +330,7 @@ class Environment(threading.Thread):
                 break
 
         print("Total R:", R)
-        brain.count_reward(R)
+        brain.log_reward(R)
 
     def run(self):
         while not self.stop_signal:
