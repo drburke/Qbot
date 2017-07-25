@@ -3,9 +3,9 @@ import pickle
 
 # call("python LunarLander.py", shell=True)
 
-LOG_BASE = './logs/5/'
+LOG_BASE = './logs/7/'
 
-learning_rate_options = [4e-3,1e-3,4e-4]
+learning_rate_options = [1e-3,1e-4]
 
 num_worker_options = [8]
 
@@ -13,17 +13,17 @@ num_optimizer_options = [2]
 
 n_step_return_options = [8]
 
-min_batch_options = [32]
+min_batch_options = [32,256,1024]
 
 loss_v_options = [0.5]
 
-loss_entropy_options = [0.01,0.04,0.1]
+loss_entropy_options = [0.01]
 
 alpha_options = [0.05]
 
-hidden_size_options = [16,32,64]
+hidden_size_options = [16]
 
-gpu = "1"
+gpu = "0"
 
 for learning_rate_index in range(len(learning_rate_options)):
 	learning_rate = learning_rate_options[learning_rate_index]
@@ -50,7 +50,7 @@ for learning_rate_index in range(len(learning_rate_options)):
 
 									log_msg = 'lr='+str(learning_rate)+'_nw='+str(num_workers)+'_no='+str(num_optimizer)+\
 										'_nsr='+str(n_step_return)+'_bs'+str(min_batch)+'_lv='+str(loss_v)+'_le='+str(loss_entropy)+\
-										'_ai='+str(alpha)+'_hs='+str(hidden_size)
+										'_ai='+str(alpha)+'_hs='+str(hidden_size)+''
 
 									hyper_params = {}
 									hyper_params['learning_rate'] = learning_rate
